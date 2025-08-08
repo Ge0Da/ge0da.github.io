@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>My Publications</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- DataTables CSS -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css"
+    >
+
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        margin: 2rem;
+      }
+      h1 {
+        margin-bottom: 1rem;
+      }
+      table {
+        width: 100%;
+      }
+      .nowrap {
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Publications</h1>
+
+    <table id="pubs" class="display">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Authors</th>
+          <th>Venue</th>
+          <th class="nowrap">Year</th>
+          <th class="nowrap">Citations</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- DataTables JS -->
+    <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+    <!-- PapaParse (CSV parser) -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <script>
+      // Try to find a header in the CSV by common aliases (case-insensitive).
+      function pickHeader(headers, aliases) {
+        const lower = headers.map((h) => h.toLowerCase());
+        for (const a of aliases) {
+          const i = lower.indexOf(a.toLowerCase());
+          if (i !== -1) return headers[i];
+        }
+        return null;
+      }
+
+      function firstNonEmpty(row, headers) {
+        for (const h of headers) {
+          if (!h) continue;
+          const v = (row[h] || '').trim();
+          if (v) return v;
+        }
+        return '';
+      }
+
+      function normalizeCitations(value) {
+        // Convert "Cited by 23" or "23" to 23
+        const m = String(value || '').match(/(\d+)/);
+        return m ? parseInt(m[1], 10) : '';
+      }
+
+      function linkFrom(row, title, urlHeader, doiHeader) {
+        const url = urlHeader ? (row[urlHeader] || '').trim() : '';
+        const doi = doiHeader ? (row[doiHeader] || '').trim() : '';
+
+        if (url) {
+          return `<a href="${url}" target="_blank" rel="noopener">${title}</a>`;
+        }
+        if (doi) {
+          const href = doi.startsWith('10.')
+            ? 'https://doi.org/' + encodeURIComponent(doi)
+            : doi;
+          return `<a href="${href}" target="_blank" rel="noopener">${title}</a>`;
+        }
+        const q = encodeURIComponent(title);
+        return `<a href="https://www.google.com/search?q=${q}" target="_blank" rel="noopener">${title}</a>`;
+      }
+
+      Papa.parse('scholar.csv', {
+        header: true,
+        download: true,
+        skipEmptyLines: 'greedy',
+        complete: function (results) {
+          const data = results.data;
+          if (!data.length) return;
+
+          const headers = results.meta.fields || Object.keys(data[0]);
+
+          // Detect columns
+          const H = {
+            title: pickHeader(headers, ['Title']),
+            authors: pickHeader(headers, [
+              'Authors',
+              'Author',
+              'Author(s)',
+            ]),
+            venue: pickHeader(headers, [
+              'Publication',
+              'Journal',
+              'Book',
+              'Conference',
+              'Venue',
+              'Publication title',
+            ]),
+            year: pickHeader(headers, [
+              'Year',
+              'Publication year',
+              'Date',
+              'Publication date',
+            ]),
+            cites: pickHeader(headers, ['Cited by', 'Citations', 'Cites']),
+            url: pickHeader(headers, ['URL', 'Link']),
+            doi: pickHeader(headers, ['DOI']),
+          };
+
+          const tbody = document.querySelector('#pubs tbody');
+          const rows = data.filter((r) => (r[H.title] || '').trim());
+
+          rows.forEach((r) => {
+            const title = (r[H.title] || '').trim();
+            const authors = firstNonEmpty(r, [H.authors]);
+            const venue = firstNonEmpty(r, [H.venue]);
+            const year =
+              (r[H.year] || '')
+                .toString()
+                .match(/\d{4}/)?.[0] || '';
+            const cites = normalizeCitations(r[H.cites]);
+            const linkedTitle = linkFrom(r, title, H.url, H.doi);
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td>${linkedTitle}</td>
+              <td>${authors}</td>
+              <td>${venue}</td>
+              <td class="nowrap">${year}</td>
+              <td class="nowrap">${cites}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+
+          $('#pubs').DataTable({
+            pageLength: 25,
+            order: [[3, 'desc']], // sort by Year desc
+            columnDefs: [{ targets: [3, 4], type: 'num' }],
+            responsive: true,
+            deferRender: true,
+          });
+        },
+      });
+    </script>
+  </body>
+</
