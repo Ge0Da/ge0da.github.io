@@ -4,10 +4,12 @@
   <meta charset="utf-8">
   <title>Publications (Google Scholar via Publish or Perish)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <!-- Minimal, clean styling -->
   <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2.0.6/css/pico.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+
   <style>
     body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     header { margin: 1.5rem 0 1rem; }
@@ -31,7 +33,7 @@
     <header>
       <h1>Publications</h1>
       <p class="muted">
-        Data source: Publish or Perish (Google Scholar). Update by exporting pop_publications.json and committing it.
+        Source: Publish or Perish export (PoPCites.json).
         <a href="https://scholar.google.com/citations?user=f0QIFuUAAAAJ&hl=en" target="_blank" rel="noopener">Google Scholar profile</a>
       </p>
     </header>
@@ -55,7 +57,7 @@
         <article>
           <h4>Citations grouped by publication year</h4>
           <canvas id="chartCitationsByPubYear" height="120"></canvas>
-          <p class="muted small">This sums each paper’s current total citations into its publication year. It is not “citations received each calendar year.”</p>
+          <p class="muted small">Sum of each paper’s total citations in its publication year. This is not “citations received per calendar year.”</p>
         </article>
         <article>
           <h4>Publications per year</h4>
@@ -79,11 +81,11 @@
         </thead>
         <tbody></tbody>
       </table>
-      <p class="muted small">Citations numbers link to the “Cited by” page when available.</p>
+      <p class="muted small">Citations link to the “Cited by” page when available.</p>
     </section>
 
     <footer class="muted" style="margin:2rem 0 1rem">
-      Update workflow: Publish or Perish → Save Results as JSON → overwrite pop_publications.json → commit → site updates.
+      Update: in Publish or Perish → Save Results as JSON → overwrite PoPCites.json → commit → site updates.
     </footer>
   </main>
 
@@ -93,7 +95,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <script>
-    const DATA_FILE = 'pop_publications.json';
+    const DATA_FILE = 'PoPCites.json';
 
     function toInt(n) { const x = parseInt(n, 10); return Number.isFinite(x) ? x : 0; }
     function hIndex(counts) {
@@ -106,7 +108,6 @@
       if (Array.isArray(a)) return a.filter(x => x && x !== '...').join(', ');
       return String(a);
     }
-
     function groupBy(arr, keyFn, valFn, reduceFn, initVal) {
       const m = new Map();
       for (const item of arr) {
@@ -116,6 +117,16 @@
         m.set(k, reduceFn(m.get(k), v));
       }
       return m;
+    }
+
+    function computeStats(works) {
+      const counts = works.map(w => toInt(w.cites));
+      return {
+        nWorks: works.length,
+        totalCites: counts.reduce((s,n)=>s+n, 0),
+        h: hIndex(counts),
+        i10: counts.filter(n => n >= 10).length
+      };
     }
 
     function renderCards(stats) {
@@ -135,14 +146,13 @@
       );
       const years1 = Array.from(perYearCount.keys()).sort((a,b)=>a-b);
       const counts = years1.map(y => perYearCount.get(y));
-
       new Chart(document.getElementById('chartPubsPerYear'), {
         type: 'bar',
         data: { labels: years1, datasets: [{ data: counts, backgroundColor: '#6366f1' }] },
         options: { plugins:{ legend:{ display:false }}, scales:{ x:{ grid:{display:false} }, y:{ beginAtZero:true, ticks:{ precision:0 }}}}
       });
 
-      // Citations grouped by publication year (sum of total cites per paper)
+      // Citations grouped by publication year
       const perYearCites = groupBy(
         works.filter(w => toInt(w.year) > 0),
         w => toInt(w.year),
@@ -151,7 +161,6 @@
       );
       const years2 = Array.from(perYearCites.keys()).sort((a,b)=>a-b);
       const cites = years2.map(y => perYearCites.get(y));
-
       new Chart(document.getElementById('chartCitationsByPubYear'), {
         type: 'line',
         data: { labels: years2, datasets: [{ data: cites, tension: .25, borderColor:'#2563eb', backgroundColor:'rgba(37,99,235,.15)', fill:true, pointRadius:3 }] },
@@ -188,16 +197,6 @@
       });
     }
 
-    function computeStats(works) {
-      const counts = works.map(w => toInt(w.cites));
-      return {
-        nWorks: works.length,
-        totalCites: counts.reduce((s,n)=>s+n, 0),
-        h: hIndex(counts),
-        i10: counts.filter(n => n >= 10).length
-      };
-    }
-
     // Tabs
     document.addEventListener('click', e => {
       const a = e.target.closest('nav.tabs a'); if (!a) return;
@@ -212,14 +211,13 @@
     (async function init(){
       try {
         const works = await fetch(DATA_FILE, { cache:'no-store' }).then(r => r.json());
-        // normalize a bit
         const clean = works.filter(w => (w.title || '').trim());
         renderCards(computeStats(clean));
         renderCharts(clean);
         renderTable(clean);
       } catch (e) {
         console.error(e);
-        alert('Could not load pop_publications.json. Place it in the repo root (same folder as index.html).');
+        alert('Could not load PoPCites.json. Place it in the repo root (same folder as index.html).');
       }
     })();
   </script>
