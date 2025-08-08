@@ -1,170 +1,227 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <title>My Publications</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<head>
+  <meta charset="utf-8">
+  <title>Publications (Google Scholar via Publish or Perish)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Minimal, clean styling -->
+  <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2.0.6/css/pico.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    header { margin: 1.5rem 0 1rem; }
+    .cards { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1rem; }
+    @media (max-width: 1100px) { .cards { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    @media (max-width: 600px)  { .cards { grid-template-columns: 1fr; } }
+    .card { padding:1rem 1.2rem; border-radius:.75rem; background:var(--pico-card-background-color); box-shadow: var(--pico-card-box-shadow); }
+    .card h6 { margin:0; opacity:.7; font-weight:600; }
+    .card .big { font-size:2rem; font-weight:800; margin-top:.25rem; }
+    nav.tabs { margin-top:1.25rem; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    .muted { opacity:.65 }
+    table td, table th { white-space: nowrap; vertical-align: top; }
+    table td:nth-child(1), table th:nth-child(1) { white-space: normal; min-width: 22rem; }
+    .small { font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>Publications</h1>
+      <p class="muted">
+        Data source: Publish or Perish (Google Scholar). Update by exporting pop_publications.json and committing it.
+        <a href="https://scholar.google.com/citations?user=f0QIFuUAAAAJ&hl=en" target="_blank" rel="noopener">Google Scholar profile</a>
+      </p>
+    </header>
 
-    <!-- DataTables CSS -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css"
-    >
+    <section class="cards">
+      <div class="card"><h6>Total citations</h6><div class="big" id="mTotal">—</div></div>
+      <div class="card"><h6>h-index</h6><div class="big" id="mH">—</div></div>
+      <div class="card"><h6>i10-index</h6><div class="big" id="mI10">—</div></div>
+      <div class="card"><h6>Publications</h6><div class="big" id="mWorks">—</div></div>
+    </section>
 
-    <style>
-      body {
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        margin: 2rem;
+    <nav class="tabs">
+      <ul>
+        <li><a href="#tab-overview" role="tab" aria-selected="true">Overview</a></li>
+        <li><a href="#tab-pubs" role="tab">Publications</a></li>
+      </ul>
+    </nav>
+
+    <section id="tab-overview" class="tab-content active">
+      <div class="grid">
+        <article>
+          <h4>Citations grouped by publication year</h4>
+          <canvas id="chartCitationsByPubYear" height="120"></canvas>
+          <p class="muted small">This sums each paper’s current total citations into its publication year. It is not “citations received each calendar year.”</p>
+        </article>
+        <article>
+          <h4>Publications per year</h4>
+          <canvas id="chartPubsPerYear" height="120"></canvas>
+        </article>
+      </div>
+    </section>
+
+    <section id="tab-pubs" class="tab-content">
+      <h4>Publications</h4>
+      <table id="pubs">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Authors</th>
+            <th>Venue</th>
+            <th>Type</th>
+            <th>Year</th>
+            <th>Citations</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="muted small">Citations numbers link to the “Cited by” page when available.</p>
+    </section>
+
+    <footer class="muted" style="margin:2rem 0 1rem">
+      Update workflow: Publish or Perish → Save Results as JSON → overwrite pop_publications.json → commit → site updates.
+    </footer>
+  </main>
+
+  <!-- libs -->
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <script>
+    const DATA_FILE = 'pop_publications.json';
+
+    function toInt(n) { const x = parseInt(n, 10); return Number.isFinite(x) ? x : 0; }
+    function hIndex(counts) {
+      const s = counts.slice().sort((a,b)=>b-a);
+      let h = 0; for (let i=0;i<s.length;i++) if (s[i] >= i+1) h = i+1;
+      return h;
+    }
+    function authorsToText(a) {
+      if (!a) return '';
+      if (Array.isArray(a)) return a.filter(x => x && x !== '...').join(', ');
+      return String(a);
+    }
+
+    function groupBy(arr, keyFn, valFn, reduceFn, initVal) {
+      const m = new Map();
+      for (const item of arr) {
+        const k = keyFn(item);
+        const v = valFn(item);
+        if (!m.has(k)) m.set(k, initVal);
+        m.set(k, reduceFn(m.get(k), v));
       }
-      h1 {
-        margin-bottom: 1rem;
-      }
-      table {
-        width: 100%;
-      }
-      .nowrap {
-        white-space: nowrap;
-      }
-    </style>
-  </head>
+      return m;
+    }
 
-  <body>
-    <h1>Publications</h1>
+    function renderCards(stats) {
+      document.getElementById('mTotal').textContent = stats.totalCites.toLocaleString();
+      document.getElementById('mH').textContent = stats.h;
+      document.getElementById('mI10').textContent = stats.i10;
+      document.getElementById('mWorks').textContent = stats.nWorks;
+    }
 
-    <table id="pubs" class="display">
-      <thead>
-        <tr>
-          <th>Title</th>
-          <th>Authors</th>
-          <th>Venue</th>
-          <th class="nowrap">Year</th>
-          <th class="nowrap">Citations</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+    function renderCharts(works) {
+      // Publications per year
+      const perYearCount = groupBy(
+        works.filter(w => toInt(w.year) > 0),
+        w => toInt(w.year),
+        _ => 1,
+        (a,b) => a + b, 0
+      );
+      const years1 = Array.from(perYearCount.keys()).sort((a,b)=>a-b);
+      const counts = years1.map(y => perYearCount.get(y));
 
-    <!-- jQuery -->
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <!-- DataTables JS -->
-    <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
-    <!-- PapaParse (CSV parser) -->
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-
-    <script>
-      // Try to find a header in the CSV by common aliases (case-insensitive).
-      function pickHeader(headers, aliases) {
-        const lower = headers.map((h) => h.toLowerCase());
-        for (const a of aliases) {
-          const i = lower.indexOf(a.toLowerCase());
-          if (i !== -1) return headers[i];
-        }
-        return null;
-      }
-
-      function firstNonEmpty(row, headers) {
-        for (const h of headers) {
-          if (!h) continue;
-          const v = (row[h] || '').trim();
-          if (v) return v;
-        }
-        return '';
-      }
-
-      function normalizeCitations(value) {
-        // Convert "Cited by 23" or "23" to 23
-        const m = String(value || '').match(/(\d+)/);
-        return m ? parseInt(m[1], 10) : '';
-      }
-
-      function linkFrom(row, title, urlHeader, doiHeader) {
-        const url = urlHeader ? (row[urlHeader] || '').trim() : '';
-        const doi = doiHeader ? (row[doiHeader] || '').trim() : '';
-
-        if (url) {
-          return `<a href="${url}" target="_blank" rel="noopener">${title}</a>`;
-        }
-        if (doi) {
-          const href = doi.startsWith('10.')
-            ? 'https://doi.org/' + encodeURIComponent(doi)
-            : doi;
-          return `<a href="${href}" target="_blank" rel="noopener">${title}</a>`;
-        }
-        const q = encodeURIComponent(title);
-        return `<a href="https://www.google.com/search?q=${q}" target="_blank" rel="noopener">${title}</a>`;
-      }
-
-      Papa.parse('scholar.csv', {
-        header: true,
-        download: true,
-        skipEmptyLines: 'greedy',
-        complete: function (results) {
-          const data = results.data;
-          if (!data.length) return;
-
-          const headers = results.meta.fields || Object.keys(data[0]);
-
-          // Detect columns
-          const H = {
-            title: pickHeader(headers, ['Title']),
-            authors: pickHeader(headers, [
-              'Authors',
-              'Author',
-              'Author(s)',
-            ]),
-            venue: pickHeader(headers, [
-              'Publication',
-              'Journal',
-              'Book',
-              'Conference',
-              'Venue',
-              'Publication title',
-            ]),
-            year: pickHeader(headers, [
-              'Year',
-              'Publication year',
-              'Date',
-              'Publication date',
-            ]),
-            cites: pickHeader(headers, ['Cited by', 'Citations', 'Cites']),
-            url: pickHeader(headers, ['URL', 'Link']),
-            doi: pickHeader(headers, ['DOI']),
-          };
-
-          const tbody = document.querySelector('#pubs tbody');
-          const rows = data.filter((r) => (r[H.title] || '').trim());
-
-          rows.forEach((r) => {
-            const title = (r[H.title] || '').trim();
-            const authors = firstNonEmpty(r, [H.authors]);
-            const venue = firstNonEmpty(r, [H.venue]);
-            const year =
-              (r[H.year] || '')
-                .toString()
-                .match(/\d{4}/)?.[0] || '';
-            const cites = normalizeCitations(r[H.cites]);
-            const linkedTitle = linkFrom(r, title, H.url, H.doi);
-
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-              <td>${linkedTitle}</td>
-              <td>${authors}</td>
-              <td>${venue}</td>
-              <td class="nowrap">${year}</td>
-              <td class="nowrap">${cites}</td>
-            `;
-            tbody.appendChild(tr);
-          });
-
-          $('#pubs').DataTable({
-            pageLength: 25,
-            order: [[3, 'desc']], // sort by Year desc
-            columnDefs: [{ targets: [3, 4], type: 'num' }],
-            responsive: true,
-            deferRender: true,
-          });
-        },
+      new Chart(document.getElementById('chartPubsPerYear'), {
+        type: 'bar',
+        data: { labels: years1, datasets: [{ data: counts, backgroundColor: '#6366f1' }] },
+        options: { plugins:{ legend:{ display:false }}, scales:{ x:{ grid:{display:false} }, y:{ beginAtZero:true, ticks:{ precision:0 }}}}
       });
-    </script>
-  </body>
-</
+
+      // Citations grouped by publication year (sum of total cites per paper)
+      const perYearCites = groupBy(
+        works.filter(w => toInt(w.year) > 0),
+        w => toInt(w.year),
+        w => toInt(w.cites),
+        (a,b) => a + b, 0
+      );
+      const years2 = Array.from(perYearCites.keys()).sort((a,b)=>a-b);
+      const cites = years2.map(y => perYearCites.get(y));
+
+      new Chart(document.getElementById('chartCitationsByPubYear'), {
+        type: 'line',
+        data: { labels: years2, datasets: [{ data: cites, tension: .25, borderColor:'#2563eb', backgroundColor:'rgba(37,99,235,.15)', fill:true, pointRadius:3 }] },
+        options: { plugins:{ legend:{ display:false }}, scales:{ x:{ grid:{display:false}}, y:{ beginAtZero:true }}}
+      });
+    }
+
+    function renderTable(works) {
+      const tbody = document.querySelector('#pubs tbody');
+      for (const w of works) {
+        const title = String(w.title || '').trim();
+        const authors = authorsToText(w.authors);
+        const venue = String(w.source || '').trim();
+        const type = String(w.type || '').trim();
+        const year = toInt(w.year) || '';
+        const cites = toInt(w.cites);
+        const linkTitle = w.citation_url ? `<a href="${w.citation_url}" target="_blank" rel="noopener">${title}</a>` : title;
+        const linkCites = w.cites_url && cites > 0 ? `<a href="${w.cites_url}" target="_blank" rel="noopener">${cites}</a>` : (cites || '');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${linkTitle}</td>
+          <td>${authors}</td>
+          <td>${venue}</td>
+          <td>${type}</td>
+          <td>${year}</td>
+          <td>${linkCites}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+      $('#pubs').DataTable({
+        pageLength: 25,
+        order: [[4,'desc']],          // sort by Year desc
+        columnDefs: [{ targets:[4,5], type:'num' }]
+      });
+    }
+
+    function computeStats(works) {
+      const counts = works.map(w => toInt(w.cites));
+      return {
+        nWorks: works.length,
+        totalCites: counts.reduce((s,n)=>s+n, 0),
+        h: hIndex(counts),
+        i10: counts.filter(n => n >= 10).length
+      };
+    }
+
+    // Tabs
+    document.addEventListener('click', e => {
+      const a = e.target.closest('nav.tabs a'); if (!a) return;
+      e.preventDefault();
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('nav.tabs a').forEach(el => el.setAttribute('aria-selected','false'));
+      document.querySelector(a.getAttribute('href')).classList.add('active');
+      a.setAttribute('aria-selected','true');
+    });
+
+    // Load and render
+    (async function init(){
+      try {
+        const works = await fetch(DATA_FILE, { cache:'no-store' }).then(r => r.json());
+        // normalize a bit
+        const clean = works.filter(w => (w.title || '').trim());
+        renderCards(computeStats(clean));
+        renderCharts(clean);
+        renderTable(clean);
+      } catch (e) {
+        console.error(e);
+        alert('Could not load pop_publications.json. Place it in the repo root (same folder as index.html).');
+      }
+    })();
+  </script>
+</body>
+</html>
